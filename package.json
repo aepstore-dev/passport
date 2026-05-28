@@ -23,13 +23,19 @@
 	"type": "commonjs",
 	"devDependencies": {
 		"@aepstore-dev/core": "^1.0.3",
+		"@nestjs/common": "^11.1.11",
+		"@nestjs/core": "^11.1.11",
+		"@nestjs/microservices": "^11.1.11",
 		"@types/express": "^5.0.0",
 		"@types/node": "^25.0.3",
 		"prettier": "^3.7.4",
+		"reflect-metadata": "^0.2.2",
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
-		"@aepstore-dev/common": "^1.0.0",
+		"@aepstore-dev/common": "^1.1.0"
+	},
+	"peerDependencies": {
 		"@nestjs/common": "^11.1.11",
 		"@nestjs/core": "^11.1.11",
 		"@nestjs/microservices": "^11.1.11",
