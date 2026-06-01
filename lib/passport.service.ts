@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { createHmac } from 'crypto'
+import { createHmac, randomBytes } from 'crypto'
 
 import { PASSPORT_OPTIONS } from './constants'
 import { PassportOptions } from './interfaces'
@@ -11,6 +11,10 @@ export class PassportService {
 
 	private static readonly HMAC_DOMAIN = 'PassportTokenAuth/v1'
 	private static readonly INTERNAL_SEP = '|'
+	// Bytes of randomness folded into every token so two tokens minted in the
+	// same second for the same user are still distinct (prevents collisions on
+	// a unique `RefreshToken.token` constraint when logins fire back-to-back).
+	private static readonly NONCE_BYTES = 12
 
 	public constructor(
 		@Inject(PASSPORT_OPTIONS) private readonly options: PassportOptions
@@ -25,22 +29,37 @@ export class PassportService {
 		const userPart = base64UrlEncode(userId)
 		const iatPart = base64UrlEncode(String(issuedAt))
 		const expPart = base64UrlEncode(String(expiresAt))
+		const noncePart = base64UrlEncode(
+			randomBytes(PassportService.NONCE_BYTES)
+		)
 
-		const serialized = this.serialize(userPart, iatPart, expPart)
+		const serialized = this.serialize(userPart, iatPart, expPart, noncePart)
 		const mac = this.computeHMAC(this.SECRET_KEY, serialized)
 
-		return `${userPart}.${iatPart}.${expPart}.${mac}`
+		return `${userPart}.${iatPart}.${expPart}.${noncePart}.${mac}`
 	}
 
 	public verify(token: string) {
 		const parts = token.split('.')
 
-		if (parts.length !== 4)
+		// 5-part = current format (with nonce); 4-part = legacy tokens still in
+		// circulation (issued before the nonce was added). Accept both so a
+		// passport bump does not force a global re-auth.
+		let userPart: string
+		let iatPart: string
+		let expPart: string
+		let noncePart: string | undefined
+		let mac: string
+
+		if (parts.length === 5) {
+			;[userPart, iatPart, expPart, noncePart, mac] = parts
+		} else if (parts.length === 4) {
+			;[userPart, iatPart, expPart, mac] = parts
+		} else {
 			return { valid: false, reason: 'Invalid token format' }
+		}
 
-		const [userPart, iatPart, expPart, mac] = parts
-
-		const serialized = this.serialize(userPart, iatPart, expPart)
+		const serialized = this.serialize(userPart, iatPart, expPart, noncePart)
 		const expectedMac = this.computeHMAC(this.SECRET_KEY, serialized)
 
 		if (!constantTimeEqual(expectedMac, mac))
@@ -60,10 +79,19 @@ export class PassportService {
 		return Math.floor(Date.now() / 1000)
 	}
 
-	private serialize(user: string, iat: string, exp: string) {
-		return [PassportService.HMAC_DOMAIN, user, iat, exp].join(
-			PassportService.INTERNAL_SEP
-		)
+	private serialize(
+		user: string,
+		iat: string,
+		exp: string,
+		nonce?: string
+	) {
+		const segments = [PassportService.HMAC_DOMAIN, user, iat, exp]
+
+		// Only fold the nonce into the MAC when present, so legacy 4-part
+		// tokens recompute to the exact same digest they were signed with.
+		if (nonce !== undefined) segments.push(nonce)
+
+		return segments.join(PassportService.INTERNAL_SEP)
 	}
 
 	private computeHMAC(secretKey: string, data: string) {
