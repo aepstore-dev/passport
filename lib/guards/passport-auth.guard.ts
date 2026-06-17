@@ -46,9 +46,19 @@ export class PassportAuthGuard implements CanActivate {
 		}
 
 		if (type === 'rpc') {
-			const metadata: any = context.switchToRpc().getContext()
-			if (metadata && typeof metadata.get === 'function') {
-				const values = metadata.get('authorization')
+			// gRPC Metadata exposes a `get(key) => string[] | string`. We can't
+			// depend on @grpc/grpc-js types here (this guard runs in HTTP too),
+			// so structurally narrow.
+			interface MetadataLike {
+				get(key: string): string | string[] | undefined
+			}
+			const metadata = context.switchToRpc().getContext<unknown>()
+			const hasGet =
+				typeof metadata === 'object' &&
+				metadata !== null &&
+				typeof (metadata as MetadataLike).get === 'function'
+			if (hasGet) {
+				const values = (metadata as MetadataLike).get('authorization')
 				const first = Array.isArray(values) ? values[0] : values
 				return this.parseBearer(first ? String(first) : undefined)
 			}

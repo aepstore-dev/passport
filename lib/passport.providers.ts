@@ -17,8 +17,8 @@ export function createPassportAsyncOptionsProvider(
 ): Provider {
 	return {
 		provide: PASSPORT_OPTIONS,
-		useFactory: async (...args: any[]) => {
-			const resolved = await options.useFactory!(...args)
+		useFactory: async (...args: unknown[]) => {
+			const resolved = await options.useFactory(...args)
 
 			if (!resolved || typeof resolved.secretKey !== 'string') {
 				throw new Error(
