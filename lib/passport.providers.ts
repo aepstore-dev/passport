@@ -17,7 +17,9 @@ export function createPassportAsyncOptionsProvider(
 ): Provider {
 	return {
 		provide: PASSPORT_OPTIONS,
-		useFactory: async (...args: unknown[]) => {
+		// Same `any[]` reasoning as PassportAsyncOptions.useFactory — NestJS
+		// FactoryProvider is contravariant in the args slot.
+		useFactory: async (...args: any[]) => {
 			const resolved = await options.useFactory(...args)
 
 			if (!resolved || typeof resolved.secretKey !== 'string') {
