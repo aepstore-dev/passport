@@ -1,6 +1,6 @@
 {
 	"name": "@aepstore-dev/passport",
-	"version": "1.2.1",
+	"version": "1.2.2",
 	"description": "Lightweight aepstore authentication library — HMAC tokens, guards, decorators",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
