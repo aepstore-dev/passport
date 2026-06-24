@@ -72,7 +72,16 @@ export class PassportService {
 		if (this.now() > expNumber)
 			return { valid: false, reason: 'Token expired' }
 
-		return { valid: true, userId: base64UrlDecode(userPart) }
+		// `iat` (issued-at, unix seconds) is surfaced so callers can enforce
+		// server-side revocation: reject tokens minted before a "revoke all
+		// sessions" epoch even though the HMAC is still valid (see RevocationStore).
+		const iatNumber = Number(base64UrlDecode(iatPart))
+
+		return {
+			valid: true,
+			userId: base64UrlDecode(userPart),
+			iat: Number.isFinite(iatNumber) ? iatNumber : undefined
+		}
 	}
 
 	private now() {

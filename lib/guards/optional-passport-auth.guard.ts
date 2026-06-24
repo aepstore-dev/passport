@@ -10,9 +10,11 @@ import { PassportAuthGuard } from './passport-auth.guard'
  */
 @Injectable()
 export class OptionalPassportAuthGuard extends PassportAuthGuard {
-	public override canActivate(context: ExecutionContext): boolean {
+	public override async canActivate(
+		context: ExecutionContext
+	): Promise<boolean> {
 		try {
-			return super.canActivate(context)
+			return await super.canActivate(context)
 		} catch {
 			return true
 		}

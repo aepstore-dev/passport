@@ -2,19 +2,29 @@ import { RpcStatus } from '@aepstore-dev/common'
 import {
 	CanActivate,
 	ExecutionContext,
+	Inject,
 	Injectable,
+	Optional,
 	UnauthorizedException
 } from '@nestjs/common'
 import { RpcException } from '@nestjs/microservices'
 
-import type { AuthenticatedUser } from '../interfaces'
+import type { AuthenticatedUser, RevocationStore } from '../interfaces'
+import { REVOCATION_STORE } from '../interfaces'
 import { PassportService } from '../passport.service'
 
 @Injectable()
 export class PassportAuthGuard implements CanActivate {
-	public constructor(private readonly passport: PassportService) {}
+	public constructor(
+		private readonly passport: PassportService,
+		// Optional: when a consumer binds a RevocationStore the guard enforces
+		// server-side revocation; otherwise it stays a pure HMAC verifier.
+		@Optional()
+		@Inject(REVOCATION_STORE)
+		private readonly revocation?: RevocationStore
+	) {}
 
-	public canActivate(context: ExecutionContext): boolean {
+	public async canActivate(context: ExecutionContext): Promise<boolean> {
 		const token = this.extractToken(context)
 
 		if (!token) {
@@ -30,7 +40,19 @@ export class PassportAuthGuard implements CanActivate {
 			)
 		}
 
-		const user: AuthenticatedUser = { id: String(result.userId) }
+		const userId = String(result.userId)
+
+		// Stateless tokens can't be invalidated by signature alone — ask the
+		// (optional) revocation store whether this token's issue time predates
+		// a "revoke all sessions" epoch for the user.
+		if (this.revocation && typeof result.iat === 'number') {
+			const revoked = await this.revocation.isRevoked(userId, result.iat)
+			if (revoked) {
+				this.throwUnauthorized(context, 'Session revoked')
+			}
+		}
+
+		const user: AuthenticatedUser = { id: userId, iat: result.iat }
 
 		this.attachUser(context, user)
 		return true

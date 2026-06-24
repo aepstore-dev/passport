@@ -11,7 +11,17 @@ base64url(userId) . base64url(iat) . base64url(exp) . base64url(nonce) . hmac
 - `iat` and `exp` are Unix seconds (`Math.floor(Date.now()/1000)`); `ttl` arguments to `generate(userId, ttl)` are in seconds and added to `iat`.
 - `nonce` is 12 random bytes (`randomBytes`) minted per token. Because `iat`/`exp` are only second-precise, two tokens generated in the same second for the same user would otherwise be byte-identical — which collides on the unique `RefreshToken.token` constraint in auth-service and crashes rapid back-to-back logins. The nonce makes every token distinct. Added in **1.2.0**.
 - HMAC is `HMAC-SHA256(secretKey, "PassportTokenAuth/v1|userPart|iatPart|expPart|noncePart")` (hex). The `PassportTokenAuth/v1` prefix is the domain separator — keep it stable across services or tokens become unverifiable.
-- `verify(token)` splits on `.`, recomputes the HMAC with `constantTimeEqual`, then checks expiry. It accepts **both** the 5-part current format and the legacy 4-part format (no nonce) so the 1.2.0 bump did not force a global re-auth — legacy tokens are serialized without the nonce segment so their MAC still matches. Returns `{ valid: true, userId }` or `{ valid: false, reason }`. The caller decides how to surface the failure (e.g. `RpcException` with `RpcStatus.UNAUTHENTICATED`).
+- `verify(token)` splits on `.`, recomputes the HMAC with `constantTimeEqual`, then checks expiry. It accepts **both** the 5-part current format and the legacy 4-part format (no nonce) so the 1.2.0 bump did not force a global re-auth — legacy tokens are serialized without the nonce segment so their MAC still matches. Returns `{ valid: true, userId, iat }` or `{ valid: false, reason }` (`iat` added in **1.3.0**). The caller decides how to surface the failure (e.g. `RpcException` with `RpcStatus.UNAUTHENTICATED`).
+
+## Server-side revocation (1.3.0)
+
+Access tokens are stateless — a valid HMAC stays valid until `exp`, so deleting a refresh-token row does **not** kill the matching access token. To make "log out everywhere" / password-change / ban take effect immediately, `PassportAuthGuard` accepts an **optional** `RevocationStore` (bind an impl to the `REVOCATION_STORE` token):
+
+```ts
+interface RevocationStore { isRevoked(userId: string, tokenIat: number): Promise<boolean> }
+```
+
+When bound, `canActivate` (now async) rejects any token whose `iat` predates the user's revoke epoch. When **not** bound (internal services that only see service-to-service traffic), the guard skips the check and stays a pure HMAC verifier — no Redis dependency is forced on the library. The typical impl reads a Redis key `revoke:{userId}` (unix-seconds epoch) and returns `tokenIat < epoch`. The party that revokes (auth-service) writes that epoch; the gateway guard reads it.
 - The payload is **opaque** but **not encrypted** — `userId` is recoverable by anyone who reads the token. Don't put secrets in it. The only claim is `sub` (in `TokenPayload`); add more by extending `userId` is not supported — the token model is single-value.
 
 ## Module wiring
